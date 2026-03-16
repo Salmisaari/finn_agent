@@ -25,6 +25,8 @@ const STAGE_THRESHOLDS: Record<string, number> = {
   'Negotiate':       30,
 };
 
+export const maxDuration = 60;
+
 export async function GET(request: NextRequest) {
   // Verify cron secret
   const authHeader = request.headers.get('authorization');

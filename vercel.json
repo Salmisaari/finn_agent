@@ -1,12 +1,5 @@
 {
-  "functions": {
-    "app/api/slack/route.ts": {
-      "maxDuration": 120
-    },
-    "app/api/cron/supplier-sweep/route.ts": {
-      "maxDuration": 60
-    }
-  },
+  "framework": "nextjs",
   "crons": [
     { "path": "/api/cron/supplier-sweep", "schedule": "0 7,16 * * *" }
   ]
