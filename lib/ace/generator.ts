@@ -1,17 +1,52 @@
 // lib/ace/generator.ts
-// Finn — Claude tool-use loop for supplier intelligence
+// Finn — OpenRouter tool-use loop for supplier intelligence
 
-import Anthropic from '@anthropic-ai/sdk';
 import type { GeneratorInput, GeneratorOutput, ToolCall } from './types';
 import { FINN_TOOL_DEFINITIONS } from '@/lib/tools/definitions';
 import { executeTool } from './executor';
 
-const anthropic = new Anthropic({
-  baseURL: 'https://openrouter.ai/api/v1',
-  apiKey: process.env.OPENROUTER_API_KEY,
-});
-
+const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MAX_LOOPS = 10;
+
+// ========================================
+// OPENROUTER TYPES
+// ========================================
+
+interface ChatMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content?: string | null;
+  tool_calls?: {
+    id: string;
+    type: 'function';
+    function: { name: string; arguments: string };
+  }[];
+  tool_call_id?: string;
+  name?: string;
+}
+
+interface OpenRouterTool {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}
+
+// ========================================
+// CONVERT TOOL DEFINITIONS (Anthropic → OpenAI format)
+// ========================================
+
+function getOpenRouterTools(): OpenRouterTool[] {
+  return FINN_TOOL_DEFINITIONS.map((tool) => ({
+    type: 'function' as const,
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.input_schema as Record<string, unknown>,
+    },
+  }));
+}
 
 // ========================================
 // SYSTEM PROMPT
@@ -108,21 +143,77 @@ Requesting team member: ${requestingUser}`;
 }
 
 // ========================================
+// OPENROUTER API CALL
+// ========================================
+
+async function callOpenRouter(
+  messages: ChatMessage[],
+  tools: OpenRouterTool[],
+  model: string
+): Promise<{
+  content: string | null;
+  tool_calls: { id: string; type: 'function'; function: { name: string; arguments: string } }[];
+}> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error('OPENROUTER_API_KEY not configured');
+
+  const body: Record<string, unknown> = {
+    model,
+    messages,
+    max_tokens: 4096,
+  };
+
+  // Only include tools if we have them
+  if (tools.length > 0) {
+    body.tools = tools;
+    body.tool_choice = 'auto';
+  }
+
+  const res = await fetch(OPENROUTER_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://finn-agent-blue.vercel.app',
+      'X-Title': 'Finn Agent',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`OpenRouter ${res.status}: ${errorText.slice(0, 500)}`);
+  }
+
+  const json = await res.json();
+  const choice = json.choices?.[0];
+
+  if (!choice) {
+    throw new Error('OpenRouter returned no choices');
+  }
+
+  return {
+    content: choice.message?.content || null,
+    tool_calls: choice.message?.tool_calls || [],
+  };
+}
+
+// ========================================
 // GENERATOR LOOP
 // ========================================
 
 export async function runGenerator(input: GeneratorInput): Promise<GeneratorOutput> {
   const startTime = Date.now();
   const toolCalls: ToolCall[] = [];
+  const model = process.env.FINN_MODEL || 'xiaomi/mimo-v2-pro';
 
   try {
     const systemPrompt = buildSystemPrompt(input.requestingUser, input.supplierNames);
+    const tools = getOpenRouterTools();
 
-    const messages: Anthropic.MessageParam[] = [
-      {
-        role: 'user',
-        content: input.slackMessage,
-      },
+    const messages: ChatMessage[] = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: input.slackMessage },
     ];
 
     let finalResponse = '';
@@ -132,57 +223,52 @@ export async function runGenerator(input: GeneratorInput): Promise<GeneratorOutp
     while (continueLoop && loopCount < MAX_LOOPS) {
       loopCount++;
 
-      const response = await anthropic.messages.create({
-        model: process.env.FINN_MODEL || 'xiaomi/mimo-v2-pro',
-        max_tokens: 4096,
-        system: systemPrompt,
-        tools: FINN_TOOL_DEFINITIONS,
-        messages,
-      });
+      const response = await callOpenRouter(messages, tools, model);
 
-      const textBlocks = response.content.filter(
-        (b) => b.type === 'text'
-      ) as Anthropic.TextBlock[];
-
-      const toolUseBlocks = response.content.filter(
-        (b) => b.type === 'tool_use'
-      ) as Anthropic.ToolUseBlock[];
-
-      if (toolUseBlocks.length === 0) {
-        finalResponse = textBlocks.map((b) => b.text).join('\n');
+      // No tool calls → final text response
+      if (!response.tool_calls || response.tool_calls.length === 0) {
+        finalResponse = response.content || '';
         continueLoop = false;
         break;
       }
 
-      const toolResults: Anthropic.ToolResultBlockParam[] = [];
+      // Add assistant message with tool calls
+      messages.push({
+        role: 'assistant',
+        content: response.content,
+        tool_calls: response.tool_calls,
+      });
 
-      for (const toolUse of toolUseBlocks) {
-        console.log(`[finn] Tool call: ${toolUse.name}`, toolUse.input);
+      // Execute each tool call and add results
+      for (const tc of response.tool_calls) {
+        const toolName = tc.function.name;
+        let toolInput: Record<string, unknown> = {};
 
-        const result = await executeTool(
-          toolUse.name,
-          toolUse.input as Record<string, unknown>,
-          input.callerContext
-        );
+        try {
+          toolInput = JSON.parse(tc.function.arguments);
+        } catch {
+          console.error(`[finn] Failed to parse tool args for ${toolName}:`, tc.function.arguments);
+        }
+
+        console.log(`[finn] Tool call: ${toolName}`, toolInput);
+
+        const result = await executeTool(toolName, toolInput, input.callerContext);
 
         toolCalls.push({
-          toolName: toolUse.name,
-          input: toolUse.input as Record<string, unknown>,
+          toolName,
+          input: toolInput,
           output: result.data,
           success: result.success,
           error: result.error,
           timestamp: new Date(),
         });
 
-        toolResults.push({
-          type: 'tool_result',
-          tool_use_id: toolUse.id,
+        messages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
           content: JSON.stringify(result, null, 2),
         });
       }
-
-      messages.push({ role: 'assistant', content: response.content });
-      messages.push({ role: 'user', content: toolResults });
     }
 
     console.log(

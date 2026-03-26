@@ -1,9 +1,14 @@
 // lib/tools/definitions.ts
-// Finn's tool definitions for the Claude tool-use API
+// Finn's tool definitions — format matches Anthropic Tool schema
+// but used via OpenRouter (converted to OpenAI format in generator.ts)
 
-import type Anthropic from '@anthropic-ai/sdk';
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+}
 
-export const FINN_TOOL_DEFINITIONS: Anthropic.Tool[] = [
+export const FINN_TOOL_DEFINITIONS: ToolDefinition[] = [
   // ========================================
   // CORE: SUPPLIER KNOWLEDGE GRAPH
   // ========================================
