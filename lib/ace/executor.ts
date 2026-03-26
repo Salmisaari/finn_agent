@@ -20,6 +20,7 @@ import {
   gmail_searchThreads,
   gmail_getThread,
   gmail_sendMessage,
+  gmail_fetchAttachments,
 } from '@/lib/handlers/gmail';
 import { postToSlackChannel } from '@/lib/handlers/slack';
 
@@ -232,6 +233,31 @@ export async function executeTool(
         return { success: true, data: thread };
       }
 
+      case 'get_email_attachments': {
+        const { attachments, error } = await gmail_fetchAttachments(
+          input.thread_id as string,
+          input.mailbox as string | undefined,
+          input.filename_filter as string | undefined
+        );
+
+        if (error) return { success: false, error };
+        if (attachments.length === 0) {
+          return {
+            success: true,
+            data: { attachments: [], message: 'No attachments found in this thread' },
+          };
+        }
+
+        return {
+          success: true,
+          data: {
+            attachments,
+            total: attachments.length,
+            total_size_kb: Math.round(attachments.reduce((s, a) => s + a.size, 0) / 1024),
+          },
+        };
+      }
+
       case 'send_supplier_email': {
         // Human gate: must be explicitly verified by team member
         if (!input.human_verified) {
@@ -246,6 +272,7 @@ export async function executeTool(
           to: input.to as string,
           subject: input.subject as string | undefined,
           body: input.body as string,
+          cc: input.cc as string[] | undefined,
           thread_id: input.thread_id as string | undefined,
           in_reply_to: input.in_reply_to as string | undefined,
         });

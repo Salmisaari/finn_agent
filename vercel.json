@@ -1,6 +1,7 @@
 {
   "framework": "nextjs",
   "crons": [
-    { "path": "/api/cron/supplier-sweep", "schedule": "0 7,16 * * *" }
+    { "path": "/api/cron/supplier-sweep", "schedule": "0 7,16 * * *" },
+    { "path": "/api/cron/followups", "schedule": "0 8,14 * * 1-5" }
   ]
 }

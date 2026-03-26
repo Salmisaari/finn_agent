@@ -224,10 +224,19 @@ export interface SendEmailResult {
   error?: string;
 }
 
+// CC validation: only internal Droppe addresses allowed
+function validateCC(recipients: string[]): { valid: boolean; invalid: string[] } {
+  const invalid = recipients.filter(
+    (r) => !r.endsWith('@droppe.fi') && !r.endsWith('@droppe.com') && !r.endsWith('@droppe-group.de')
+  );
+  return { valid: invalid.length === 0, invalid };
+}
+
 export async function gmail_sendMessage(opts: {
   to: string;
   subject?: string;
   body: string;
+  cc?: string[];
   thread_id?: string;
   in_reply_to?: string;
   references?: string;
@@ -236,21 +245,39 @@ export async function gmail_sendMessage(opts: {
   const gmail = getGmailClient(FINN_MAILBOX);
   const from = FINN_MAILBOX;
 
-  // Build MIME email
+  // Validate CC recipients
+  const cc = opts.cc || [];
+  if (cc.length > 0) {
+    const ccCheck = validateCC(cc);
+    if (!ccCheck.valid) {
+      return {
+        success: false,
+        error: `CC recipients must be @droppe.fi, @droppe.com, or @droppe-group.de. Invalid: ${ccCheck.invalid.join(', ')}`,
+      };
+    }
+  }
+
+  // Build MIME email with UTF-8 subject encoding
   const subject = opts.subject || '(no subject)';
-  const headers = [
+  const utf8Subject = `=?utf-8?B?${Buffer.from(subject).toString('base64')}?=`;
+  const headerLines = [
     `From: ${from}`,
     `To: ${opts.to}`,
-    `Subject: ${subject}`,
-    'Content-Type: text/plain; charset=utf-8',
-    'MIME-Version: 1.0',
   ];
 
-  if (opts.in_reply_to) headers.push(`In-Reply-To: ${opts.in_reply_to}`);
-  if (opts.references) headers.push(`References: ${opts.references}`);
+  if (cc.length > 0) headerLines.push(`Cc: ${cc.join(', ')}`);
+
+  headerLines.push(
+    `Subject: ${utf8Subject}`,
+    'Content-Type: text/plain; charset=utf-8',
+    'MIME-Version: 1.0',
+  );
+
+  if (opts.in_reply_to) headerLines.push(`In-Reply-To: ${opts.in_reply_to}`);
+  if (opts.references) headerLines.push(`References: ${opts.references}`);
 
   const raw = Buffer.from(
-    `${headers.join('\r\n')}\r\n\r\n${opts.body}`
+    `${headerLines.join('\r\n')}\r\n\r\n${opts.body}`
   )
     .toString('base64')
     .replace(/\+/g, '-')
@@ -273,5 +300,130 @@ export async function gmail_sendMessage(opts: {
       success: false,
       error: err instanceof Error ? err.message : 'Unknown error',
     };
+  }
+}
+
+// ========================================
+// FETCH ATTACHMENTS
+// ========================================
+
+export interface AttachmentInfo {
+  filename: string;
+  mimeType: string;
+  size: number;
+  messageSubject: string;
+  messageDate: string;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function collectParts(payload: any): any[] {
+  if (!payload) return [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const result: any[] = [];
+  if (payload.filename && payload.body?.attachmentId) {
+    result.push(payload);
+  }
+  if (payload.parts) {
+    for (const part of payload.parts) {
+      result.push(...collectParts(part));
+    }
+  }
+  return result;
+}
+
+export async function gmail_fetchAttachments(
+  threadId: string,
+  mailbox?: string,
+  filenameFilter?: string
+): Promise<{ attachments: AttachmentInfo[]; error?: string }> {
+  try {
+    const gmail = getGmailClient(mailbox || FINN_MAILBOX);
+
+    const threadRes = await gmail.users.threads.get({
+      userId: 'me',
+      id: threadId,
+    });
+
+    const messages = threadRes.data.messages || [];
+    if (messages.length === 0) {
+      return { attachments: [], error: 'Thread not found or empty' };
+    }
+
+    const attachments: AttachmentInfo[] = [];
+
+    for (const message of messages) {
+      const headers = message.payload?.headers || [];
+      const subjectHeader = headers.find((h) => h.name?.toLowerCase() === 'subject');
+      const dateHeader = headers.find((h) => h.name?.toLowerCase() === 'date');
+      const messageSubject = subjectHeader?.value || '(no subject)';
+      const messageDate = dateHeader?.value
+        ? new Date(dateHeader.value).toISOString()
+        : '';
+
+      const parts = collectParts(message.payload);
+      for (const part of parts) {
+        const filename = part.filename || '';
+        const attachmentId = part.body?.attachmentId;
+        if (!filename || !attachmentId) continue;
+
+        // Apply filename filter if provided
+        if (filenameFilter) {
+          if (!filename.toLowerCase().includes(filenameFilter.toLowerCase())) continue;
+        }
+
+        try {
+          const attRes = await gmail.users.messages.attachments.get({
+            userId: 'me',
+            messageId: message.id!,
+            id: attachmentId,
+          });
+
+          if (attRes.data.data) {
+            const buffer = Buffer.from(attRes.data.data, 'base64url');
+            attachments.push({
+              filename,
+              mimeType: part.mimeType || 'application/octet-stream',
+              size: buffer.length,
+              messageSubject,
+              messageDate,
+            });
+          }
+        } catch (e) {
+          console.warn(`[gmail] Failed to fetch attachment ${filename}:`, e);
+        }
+      }
+    }
+
+    return { attachments };
+  } catch (err) {
+    return {
+      attachments: [],
+      error: err instanceof Error ? err.message : 'Unknown error',
+    };
+  }
+}
+
+// ========================================
+// CHECK FOR REPLIES (used by follow-up automation)
+// ========================================
+
+export async function gmail_hasReply(
+  supplierEmail: string,
+  afterDate: Date,
+  mailbox?: string
+): Promise<{ hasReply: boolean; snippet?: string; threadId?: string }> {
+  try {
+    const afterEpoch = Math.floor(afterDate.getTime() / 1000);
+    const threads = await gmail_searchThreads({
+      query: `from:${supplierEmail} after:${afterEpoch}`,
+      mailbox: mailbox || FINN_MAILBOX,
+    });
+
+    if (threads.length > 0) {
+      return { hasReply: true, snippet: threads[0].snippet, threadId: threads[0].thread_id };
+    }
+    return { hasReply: false };
+  } catch {
+    return { hasReply: false };
   }
 }

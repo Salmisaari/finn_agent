@@ -167,6 +167,32 @@ export const FINN_TOOL_DEFINITIONS: ToolDefinition[] = [
   },
 
   {
+    name: 'get_email_attachments',
+    description:
+      'List attachments in an email thread. Returns filename, type, size, and which message they came from. ' +
+      'Use this when asked about documents, price lists, catalogs, or files a supplier sent.',
+    input_schema: {
+      type: 'object',
+      required: ['thread_id'],
+      properties: {
+        thread_id: {
+          type: 'string',
+          description: 'Gmail thread ID from search results',
+        },
+        mailbox: {
+          type: 'string',
+          enum: ['finn@droppe.com', 'orders@droppe.com', 'oskar@droppe.fi', 'jonas@droppe.fi', 'jonas.wagner@droppe-group.de'],
+          description: 'Which mailbox (default: finn@droppe.com)',
+        },
+        filename_filter: {
+          type: 'string',
+          description: 'Only return attachments whose filename contains this string (case-insensitive)',
+        },
+      },
+    },
+  },
+
+  {
     name: 'send_supplier_email',
     description:
       'Send an email via finn@droppe.com. ' +
@@ -187,6 +213,11 @@ export const FINN_TOOL_DEFINITIONS: ToolDefinition[] = [
         body: {
           type: 'string',
           description: 'Email body text (plain text, no HTML)',
+        },
+        cc: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'CC recipients (must be @droppe.fi, @droppe.com, or @droppe-group.de)',
         },
         thread_id: {
           type: 'string',
