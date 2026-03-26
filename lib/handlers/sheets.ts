@@ -340,6 +340,48 @@ export async function getBrandAnalytics(
 // HELPER: find value by key (case-insensitive)
 // ========================================
 
+// ========================================
+// SCAN: Read full tab as structured data (for aggregate queries)
+// ========================================
+
+export async function scanSheet(
+  sheetName: 'transition' | 'mastertab' | 'okr' | 'analytics',
+  filterColumn?: string,
+  filterValue?: string
+): Promise<{ headers: string[]; rows: Record<string, string>[]; total: number }> {
+  const sheetMap: Record<string, { id: string; tab: string }> = {
+    transition: { id: SHEET_MASTERTAB_ID, tab: '2026 Transition' },
+    mastertab: { id: SHEET_MASTERTAB_ID, tab: 'Supplier Mastertab' },
+    okr: { id: SHEET_OKR_ID, tab: 'Brands' },
+    analytics: { id: SHEET_ANALYTICS_ID, tab: 'suppliers' },
+  };
+
+  const config = sheetMap[sheetName];
+  if (!config) throw new Error(`Unknown sheet: ${sheetName}`);
+
+  const { headers, rows } = await readSheet(config.id, config.tab, 1000);
+
+  let objects = rows.map((r) => rowToObject(headers, r));
+
+  // Optional filter
+  if (filterColumn && filterValue) {
+    const col = filterColumn.toLowerCase();
+    const val = filterValue.toLowerCase();
+    objects = objects.filter((obj) => {
+      for (const [k, v] of Object.entries(obj)) {
+        if (k.toLowerCase().includes(col) && v.toLowerCase().includes(val)) return true;
+      }
+      return false;
+    });
+  }
+
+  return { headers, rows: objects, total: objects.length };
+}
+
+// ========================================
+// HELPER: find value by key (case-insensitive)
+// ========================================
+
 function findFieldValue(obj: Record<string, string>, keys: string[]): string | undefined {
   for (const key of keys) {
     for (const [k, v] of Object.entries(obj)) {

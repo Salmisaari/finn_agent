@@ -26,7 +26,7 @@ import {
   gmail_fetchAttachments,
   gmail_downloadAttachment,
 } from '@/lib/handlers/gmail';
-import { updateTransitionField, updateMastertabField } from '@/lib/handlers/sheets';
+import { updateTransitionField, updateMastertabField, scanSheet } from '@/lib/handlers/sheets';
 import { postToSlackChannel } from '@/lib/handlers/slack';
 
 export async function executeTool(
@@ -498,6 +498,34 @@ export async function executeTool(
       }
 
       // ========================================
+      case 'scan_sheet': {
+        try {
+          const result = await scanSheet(
+            input.sheet as 'transition' | 'mastertab' | 'okr' | 'analytics',
+            input.filter_column as string | undefined,
+            input.filter_value as string | undefined
+          );
+
+          // Truncate if too many rows to fit in context
+          const maxRows = 50;
+          const truncated = result.rows.length > maxRows;
+          const rows = truncated ? result.rows.slice(0, maxRows) : result.rows;
+
+          return {
+            success: true,
+            data: {
+              total: result.total,
+              showing: rows.length,
+              truncated,
+              headers: result.headers,
+              rows,
+            },
+          };
+        } catch (err) {
+          return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+        }
+      }
+
       case 'update_sheet': {
         const prefix = input.prefix as string;
         const tab = input.tab as string;

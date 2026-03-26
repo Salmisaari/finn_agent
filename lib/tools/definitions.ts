@@ -455,6 +455,34 @@ export const FINN_TOOL_DEFINITIONS: ToolDefinition[] = [
   // ========================================
   // TEAM COMMUNICATION
   {
+    name: 'scan_sheet',
+    description:
+      'Scan an entire spreadsheet tab to answer aggregate questions. ' +
+      'Use this for: "how many suppliers sent price lists?", "which brands are frozen?", ' +
+      '"who has no ads?", "list all priority 1 suppliers". ' +
+      'Optionally filter by column/value to narrow results.',
+    input_schema: {
+      type: 'object',
+      required: ['sheet'],
+      properties: {
+        sheet: {
+          type: 'string',
+          enum: ['transition', 'mastertab', 'okr', 'analytics'],
+          description: 'Which sheet: transition (price updates), mastertab (supplier ops), okr (brand priorities), analytics (GMV/ROAS)',
+        },
+        filter_column: {
+          type: 'string',
+          description: 'Column name to filter by (partial match, case-insensitive)',
+        },
+        filter_value: {
+          type: 'string',
+          description: 'Value to filter for (partial match, case-insensitive)',
+        },
+      },
+    },
+  },
+
+  {
     name: 'update_sheet',
     description:
       'Update a field in the Supplier Mastertab or 2026 Transition spreadsheet. ' +
