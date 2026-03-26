@@ -7,7 +7,8 @@ import { FINN_TOOL_DEFINITIONS } from '@/lib/tools/definitions';
 import { executeTool } from './executor';
 
 const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
+  baseURL: 'https://openrouter.ai/api/v1',
+  apiKey: process.env.OPENROUTER_API_KEY,
 });
 
 const MAX_LOOPS = 10;
@@ -132,7 +133,7 @@ export async function runGenerator(input: GeneratorInput): Promise<GeneratorOutp
       loopCount++;
 
       const response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-6',
+        model: process.env.FINN_MODEL || 'anthropic/claude-sonnet-4-6',
         max_tokens: 4096,
         system: systemPrompt,
         tools: FINN_TOOL_DEFINITIONS,
