@@ -133,7 +133,7 @@ export async function runGenerator(input: GeneratorInput): Promise<GeneratorOutp
       loopCount++;
 
       const response = await anthropic.messages.create({
-        model: process.env.FINN_MODEL || 'anthropic/claude-sonnet-4-6',
+        model: process.env.FINN_MODEL || 'xiaomi/mimo-v2-pro',
         max_tokens: 4096,
         system: systemPrompt,
         tools: FINN_TOOL_DEFINITIONS,
