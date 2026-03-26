@@ -5,21 +5,67 @@
 import { google } from 'googleapis';
 
 // ========================================
-// AUTH
+// AUTH — Service account with domain-wide delegation
 // ========================================
 
-function getGmailClient() {
+// Hard-coded allowlist: Finn can ONLY access these mailboxes.
+// Add/remove here to change access. This is the security boundary.
+const ALLOWED_MAILBOXES = [
+  'finn@droppe.com',
+  'orders@droppe.com',
+  'oskar@droppe.fi',
+  'jonas@droppe.fi',
+  'jonas.wagner@droppe-group.de',
+] as const;
+
+type AllowedMailbox = typeof ALLOWED_MAILBOXES[number];
+
+const FINN_MAILBOX = 'finn@droppe.com';
+
+function assertAllowedMailbox(email: string): asserts email is AllowedMailbox {
+  if (!ALLOWED_MAILBOXES.includes(email as AllowedMailbox)) {
+    throw new Error(
+      `Access denied: "${email}" is not in Finn's allowed mailbox list. ` +
+      `Allowed: ${ALLOWED_MAILBOXES.join(', ')}`
+    );
+  }
+}
+
+function getGmailClient(impersonateUser: string = FINN_MAILBOX) {
+  assertAllowedMailbox(impersonateUser);
+
+  const serviceAccountKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+
+  if (serviceAccountKey) {
+    // Service account with domain-wide delegation (production)
+    const key = JSON.parse(serviceAccountKey);
+    const auth = new google.auth.JWT({
+      email: key.client_email,
+      key: key.private_key,
+      scopes: [
+        'https://www.googleapis.com/auth/gmail.send',
+        'https://www.googleapis.com/auth/gmail.readonly',
+        'https://www.googleapis.com/auth/gmail.modify',
+      ],
+      subject: impersonateUser,
+    });
+    return google.gmail({ version: 'v1', auth });
+  }
+
+  // Fallback: OAuth2 refresh token (dev / single-mailbox)
   const clientId = process.env.GMAIL_CLIENT_ID;
   const clientSecret = process.env.GMAIL_CLIENT_SECRET;
   const refreshToken = process.env.GMAIL_REFRESH_TOKEN;
 
   if (!clientId || !clientSecret || !refreshToken) {
-    throw new Error('Gmail credentials not configured (GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN)');
+    throw new Error(
+      'Gmail not configured. Set GOOGLE_SERVICE_ACCOUNT_KEY (production) ' +
+      'or GMAIL_CLIENT_ID + GMAIL_CLIENT_SECRET + GMAIL_REFRESH_TOKEN (dev).'
+    );
   }
 
   const auth = new google.auth.OAuth2(clientId, clientSecret);
   auth.setCredentials({ refresh_token: refreshToken });
-
   return google.gmail({ version: 'v1', auth });
 }
 
@@ -44,8 +90,9 @@ export async function gmail_searchThreads(opts: {
   query: string;
   supplier_name?: string;
   days_back?: number;
+  mailbox?: string;
 }): Promise<EmailThreadSummary[]> {
-  const gmail = getGmailClient();
+  const gmail = getGmailClient(opts.mailbox || FINN_MAILBOX);
 
   let q = opts.query;
   if (opts.supplier_name) {
@@ -118,8 +165,8 @@ export interface EmailThread {
   messages: EmailMessage[];
 }
 
-export async function gmail_getThread(threadId: string): Promise<EmailThread> {
-  const gmail = getGmailClient();
+export async function gmail_getThread(threadId: string, mailbox?: string): Promise<EmailThread> {
+  const gmail = getGmailClient(mailbox || FINN_MAILBOX);
 
   const threadRes = await gmail.users.threads.get({
     userId: 'me',
@@ -185,8 +232,9 @@ export async function gmail_sendMessage(opts: {
   in_reply_to?: string;
   references?: string;
 }): Promise<SendEmailResult> {
-  const gmail = getGmailClient();
-  const from = process.env.GMAIL_SUPPLIER_INBOX || 'me';
+  // Finn always sends as finn@droppe.com — no other mailbox allowed for sending
+  const gmail = getGmailClient(FINN_MAILBOX);
+  const from = FINN_MAILBOX;
 
   // Build MIME email
   const subject = opts.subject || '(no subject)';

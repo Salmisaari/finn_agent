@@ -19,6 +19,15 @@ import {
   type SupplierActivity,
   type SupplierNote,
 } from './pipedrive';
+import {
+  getMastertabRow,
+  getOKRBrandsRow,
+  getTransitionRow,
+  getBrandAnalytics,
+  type MastertabRow,
+  type OKRBrandsRow,
+  type TransitionRow,
+} from './sheets';
 
 export type { SupplierContact, SupplierActivity, SupplierNote };
 
@@ -129,6 +138,28 @@ export interface SupplierProfile {
   // Negotiation intelligence (computed)
   negotiation?: NegotiationSignals;
 
+  // Ads status (from OKR Brands tab)
+  ads_status?: string;
+  strategic_notes?: string;
+  priority?: number;
+  okr_owner?: string;
+  latest_action?: string;
+
+  // Price update history (from 2026 Transition tab)
+  price_update_status?: string;
+  price_list_link?: string;
+  ops_stop_date?: string;
+  ops_resume_date?: string;
+
+  // Mastertab operational data
+  catalog_type?: string;
+  available_skus?: number;
+  source_language?: string;
+  source_currency?: string;
+  raw_data_folder?: string;
+  dynamic_shipping?: boolean;
+  fixed_take_rate?: number;
+
   // Relationship metadata
   last_contact_date?: string;
   org_notes?: string;
@@ -148,6 +179,19 @@ function computeNegotiationSignals(profile: Omit<SupplierProfile, 'negotiation'>
   const opportunities: string[] = [];
 
   // --- PRICING SIGNALS ---
+
+  if (profile.price_update_status) {
+    const status = profile.price_update_status.toLowerCase();
+    if (status === 'ask' || status === 'pending') {
+      signals.push('price_update_pending');
+      opportunities.push(`Price list status is "${profile.price_update_status}" — request updated price list for current year`);
+    }
+  }
+
+  if (profile.ops_stop_date && !profile.ops_resume_date) {
+    signals.push('ops_paused');
+    opportunities.push(`Operations paused since ${profile.ops_stop_date} — check if price list received and resume`);
+  }
 
   if (profile.catalog_discount_pct != null && profile.catalog_discount_pct < 40) {
     signals.push('discount_below_40pct');
@@ -225,6 +269,13 @@ function computeNegotiationSignals(profile: Omit<SupplierProfile, 'negotiation'>
     }
   }
 
+  // --- CONTENT SIGNALS ---
+
+  if (profile.available_skus != null && profile.available_skus < 5) {
+    signals.push('content_weak');
+    opportunities.push(`Only ${profile.available_skus} SKUs available — thin catalog, push for more products`);
+  }
+
   // --- GROWTH SIGNALS (need performance data) ---
 
   if (profile.performance) {
@@ -258,7 +309,10 @@ function rebuildSupplierProfile(
   contacts: SupplierContact[],
   openActivities: SupplierActivity[],
   recentDoneActivities: SupplierActivity[],
-  notes: SupplierNote[]
+  notes: SupplierNote[],
+  mastertab: MastertabRow | null,
+  okr: OKRBrandsRow | null,
+  transition: TransitionRow | null,
 ): SupplierProfile {
   const profile: Omit<SupplierProfile, 'negotiation'> = {
     // Identity
@@ -277,7 +331,7 @@ function rebuildSupplierProfile(
     pipeline_stage_order: deal?.stage_order,
     next_stage: deal?.next_stage_name || undefined,
     days_in_stage: deal?.days_in_stage,
-    owner: org.owner_name,
+    owner: okr?.owner || org.owner_name,
 
     // Commercial terms
     catalog_discount_pct: org.catalog_discount_pct,
@@ -317,6 +371,28 @@ function rebuildSupplierProfile(
 
     // Notes
     notes: notes.length ? notes : undefined,
+
+    // OKR Brands data
+    ads_status: okr?.ads_status,
+    strategic_notes: okr?.strategic_notes,
+    priority: okr?.priority,
+    okr_owner: okr?.owner,
+    latest_action: okr?.latest_action,
+
+    // 2026 Transition data
+    price_update_status: transition?.price_update_status,
+    price_list_link: transition?.price_list_link,
+    ops_stop_date: transition?.ops_stop_date,
+    ops_resume_date: transition?.ops_resume_date,
+
+    // Mastertab operational data
+    catalog_type: mastertab?.catalog_type,
+    available_skus: mastertab?.available_skus,
+    source_language: mastertab?.source_language,
+    source_currency: mastertab?.source_currency,
+    raw_data_folder: mastertab?.raw_data_folder,
+    dynamic_shipping: mastertab?.dynamic_shipping,
+    fixed_take_rate: mastertab?.fixed_take_rate,
 
     // Relationship
     last_contact_date: org.latest_visit,
@@ -383,16 +459,21 @@ export async function getSupplierProfile(opts: {
 
   if (!org) return { profile: null, found: false };
 
-  // Fetch all sources in parallel
-  const [deal, contacts, openActivities, recentDoneActivities, notes] = await Promise.all([
+  const prefix = org.prefix || '';
+
+  // Fetch all sources in parallel: Pipedrive + Sheets
+  const [deal, contacts, openActivities, recentDoneActivities, notes, mastertab, okr, transition] = await Promise.all([
     getPipeline11Deal(org.id).catch(() => null),
     getOrgPersons(org.id).catch(() => [] as SupplierContact[]),
     getOrgActivities(org.id, { done: false, limit: 20 }).catch(() => [] as SupplierActivity[]),
     getOrgActivities(org.id, { done: true, limit: 5 }).catch(() => [] as SupplierActivity[]),
     getOrgNotes(org.id, 10).catch(() => [] as SupplierNote[]),
+    prefix ? getMastertabRow(prefix).catch(() => null) : Promise.resolve(null),
+    prefix ? getOKRBrandsRow(prefix).catch(() => null) : Promise.resolve(null),
+    prefix ? getTransitionRow(prefix, org.name).catch(() => null) : Promise.resolve(null),
   ]);
 
-  const profile = rebuildSupplierProfile(org, deal, contacts, openActivities, recentDoneActivities, notes);
+  const profile = rebuildSupplierProfile(org, deal, contacts, openActivities, recentDoneActivities, notes, mastertab, okr, transition);
 
   // Cache in KV
   if (store) {
@@ -411,16 +492,41 @@ export async function getSupplierProfile(opts: {
 
 export async function getSupplierWithPerformance(
   orgId: number,
-  _brandName: string,
-  _months = 3
+  brandName: string,
+  months = 3
 ): Promise<SupplierPerformance | null> {
   const store = await getKV();
   if (store) {
     const cached = await store.get(`finn:perf:${orgId}`);
     if (cached) return cached as SupplierPerformance;
   }
-  // Performance data fetched on-demand via analytics tool — not yet connected
-  return null;
+
+  if (!brandName) return null;
+
+  const monthlyData = await getBrandAnalytics(brandName, months).catch(() => []);
+  if (monthlyData.length === 0) return null;
+
+  const latest = monthlyData[monthlyData.length - 1];
+  const totalGmv = monthlyData.reduce((sum, m) => sum + m.gmv, 0);
+
+  const perf: SupplierPerformance = {
+    months_loaded: monthlyData.length,
+    gmv_last_3m: totalGmv,
+    orders_last_month: latest.orders,
+    margin_per_order: latest.margin_per_order,
+    aov: latest.aov,
+    ad_spend_last_month: latest.ad_spend,
+    roas: latest.roas,
+    co_advertising_pct: latest.co_advertising_pct,
+    as_of: new Date().toISOString(),
+  };
+
+  // Cache with 6h TTL
+  if (store) {
+    await store.set(`finn:perf:${orgId}`, perf, { ex: KV_TTL_PERF });
+  }
+
+  return perf;
 }
 
 // ========================================

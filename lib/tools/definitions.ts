@@ -113,7 +113,9 @@ export const FINN_TOOL_DEFINITIONS: Anthropic.Tool[] = [
 
   {
     name: 'search_supplier_emails',
-    description: 'Search the finn@droppe.com Gmail inbox for supplier email threads.',
+    description:
+      'Search Gmail for supplier email threads. Defaults to finn@droppe.com. ' +
+      'Can also search orders@droppe.com (for order/shipping context) or oskar@droppe.fi.',
     input_schema: {
       type: 'object',
       required: ['query'],
@@ -130,6 +132,11 @@ export const FINN_TOOL_DEFINITIONS: Anthropic.Tool[] = [
           type: 'number',
           description: 'Only show emails from the last N days',
         },
+        mailbox: {
+          type: 'string',
+          enum: ['finn@droppe.com', 'orders@droppe.com', 'oskar@droppe.fi', 'jonas@droppe.fi', 'jonas.wagner@droppe-group.de'],
+          description: 'Which mailbox to search (default: finn@droppe.com)',
+        },
       },
     },
   },
@@ -144,6 +151,11 @@ export const FINN_TOOL_DEFINITIONS: Anthropic.Tool[] = [
         thread_id: {
           type: 'string',
           description: 'Gmail thread ID from search results',
+        },
+        mailbox: {
+          type: 'string',
+          enum: ['finn@droppe.com', 'orders@droppe.com', 'oskar@droppe.fi', 'jonas@droppe.fi', 'jonas.wagner@droppe-group.de'],
+          description: 'Which mailbox this thread belongs to (default: finn@droppe.com)',
         },
       },
     },

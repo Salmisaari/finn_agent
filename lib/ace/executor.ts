@@ -214,6 +214,7 @@ export async function executeTool(
           query: input.query as string,
           supplier_name: input.supplier_name as string | undefined,
           days_back: input.days_back as number | undefined,
+          mailbox: input.mailbox as string | undefined,
         });
 
         return {
@@ -227,7 +228,7 @@ export async function executeTool(
       }
 
       case 'read_supplier_email': {
-        const thread = await gmail_getThread(input.thread_id as string);
+        const thread = await gmail_getThread(input.thread_id as string, input.mailbox as string | undefined);
         return { success: true, data: thread };
       }
 

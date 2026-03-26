@@ -8,13 +8,34 @@ const SHEET_MASTERTAB_ID = process.env.SHEET_MASTERTAB_ID || '1Z7fXRDviUWgtjIQLL
 const SHEET_OKR_ID       = process.env.SHEET_OKR_ID       || '1ev1kuYO9dRrlyquSkAznzvk858nnX8IryvOHJfhUTEc';
 const SHEET_ANALYTICS_ID = process.env.SHEET_ANALYTICS_ID || '12mVb9CuIyzicjtpsb6HZuiJVgbqKLwefqtENQiLYi8Y';
 
+// Impersonate this user for Sheets access (must have access to the spreadsheets)
+const SHEETS_IMPERSONATE_USER = 'finn@droppe.com';
+
 function getSheetsClient() {
+  const serviceAccountKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+
+  if (serviceAccountKey) {
+    // Service account with domain-wide delegation (production)
+    const key = JSON.parse(serviceAccountKey);
+    const auth = new google.auth.JWT({
+      email: key.client_email,
+      key: key.private_key,
+      scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+      subject: SHEETS_IMPERSONATE_USER,
+    });
+    return google.sheets({ version: 'v4', auth });
+  }
+
+  // Fallback: OAuth2 refresh token (dev)
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
 
   if (!clientId || !clientSecret || !refreshToken) {
-    throw new Error('Google Sheets credentials not configured (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN)');
+    throw new Error(
+      'Sheets not configured. Set GOOGLE_SERVICE_ACCOUNT_KEY (production) ' +
+      'or GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET + GOOGLE_REFRESH_TOKEN (dev).'
+    );
   }
 
   const auth = new google.auth.OAuth2(clientId, clientSecret);
