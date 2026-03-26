@@ -312,6 +312,14 @@ async function processInBackground(params: {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.text();
+
+    // URL verification must be handled before signature check —
+    // Slack sends this during initial setup and needs an immediate response
+    const parsed = JSON.parse(body);
+    if (parsed.type === 'url_verification') {
+      return NextResponse.json({ challenge: parsed.challenge });
+    }
+
     const timestamp = request.headers.get('x-slack-request-timestamp') || '';
     const signature = request.headers.get('x-slack-signature') || '';
 
@@ -319,12 +327,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
     }
 
-    const event = JSON.parse(body);
-
-    // URL verification (Slack app setup)
-    if (event.type === 'url_verification') {
-      return NextResponse.json({ challenge: event.challenge });
-    }
+    const event = parsed;
 
     if (event.type === 'event_callback') {
       const slackEvent = event.event;
