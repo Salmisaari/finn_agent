@@ -545,4 +545,23 @@ export const FINN_TOOL_DEFINITIONS: ToolDefinition[] = [
       },
     },
   },
+
+  {
+    name: 'post_progress',
+    description:
+      'Post a progress update to the CURRENT Slack thread while you work. ' +
+      'Use this for progressive reporting: post each finding as you discover it, ' +
+      'so the team sees live updates. Then finish with a final summary in your response. ' +
+      'Example: researching 5 suppliers → post a finding for each one as you go.',
+    input_schema: {
+      type: 'object',
+      required: ['message'],
+      properties: {
+        message: {
+          type: 'string',
+          description: 'Progress update text (use Slack mrkdwn: *bold*, _italic_, dashes for bullets)',
+        },
+      },
+    },
+  },
 ];

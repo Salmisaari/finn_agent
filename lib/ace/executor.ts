@@ -27,7 +27,7 @@ import {
   gmail_downloadAttachment,
 } from '@/lib/handlers/gmail';
 import { updateTransitionField, updateMastertabField, scanSheet } from '@/lib/handlers/sheets';
-import { postToSlackChannel } from '@/lib/handlers/slack';
+import { postToSlackChannel, sendSlackMessage } from '@/lib/handlers/slack';
 
 export async function executeTool(
   toolName: string,
@@ -560,6 +560,22 @@ export async function executeTool(
 
         return result.ok
           ? { success: true, data: { ts: result.ts } }
+          : { success: false, error: result.error };
+      }
+
+      case 'post_progress': {
+        if (!_callerContext?.slackChannel || !_callerContext?.slackThreadTs) {
+          return { success: false, error: 'No Slack thread context available' };
+        }
+
+        const result = await sendSlackMessage(
+          _callerContext.slackChannel,
+          input.message as string,
+          _callerContext.slackThreadTs
+        );
+
+        return result.ok
+          ? { success: true, data: { posted: true } }
           : { success: false, error: result.error };
       }
 
