@@ -322,6 +322,79 @@ export const FINN_TOOL_DEFINITIONS: ToolDefinition[] = [
   },
 
   {
+    name: 'move_to_stage',
+    description:
+      'Move a supplier deal to a specific stage in Pipeline 11. ' +
+      'Use "Pending Answer" after sending a supplier email and waiting for reply. ' +
+      'Use "Pending Meeting" after scheduling/proposing a meeting. ' +
+      'Use "Pending Action" when the supplier replied and the team needs to act. ' +
+      'For other stages, use advance_pipeline_stage instead.',
+    input_schema: {
+      type: 'object',
+      required: ['org_id', 'stage_name', 'reason'],
+      properties: {
+        org_id: {
+          type: 'number',
+          description: 'Pipedrive org ID',
+        },
+        stage_name: {
+          type: 'string',
+          enum: [
+            'Discovery', 'NBM Gate', 'Onboarding', 'Masterdata',
+            'Pending Answer', 'Pending Meeting', 'Pending Action',
+            'Go-Live Gate', 'Content', 'MOV', 'Pricing',
+            'New Markets', 'Integrations', 'Logos',
+            'Paid Ads Gate', 'Growth Roadmap', 'Negotiate',
+          ],
+          description: 'Target stage name',
+        },
+        reason: {
+          type: 'string',
+          description: 'Why this move is happening',
+        },
+      },
+    },
+  },
+
+  {
+    name: 'create_calendar_event',
+    description:
+      'Create a meeting on Johannes\'s Google Calendar. Use when scheduling supplier meetings. ' +
+      'Also include the booking link in emails: https://calendar.google.com/calendar/u/0/appointments/AcZssZ3MWCBceBbM9EtKNFjHGusXmNCLqy37W_10UeY=',
+    input_schema: {
+      type: 'object',
+      required: ['summary', 'start_time', 'duration_minutes'],
+      properties: {
+        summary: {
+          type: 'string',
+          description: 'Meeting title (e.g. "Droppe x Blaklader — Q2 planning")',
+        },
+        description: {
+          type: 'string',
+          description: 'Meeting description / agenda',
+        },
+        start_time: {
+          type: 'string',
+          description: 'ISO 8601 datetime (e.g. "2026-04-02T14:00:00+03:00")',
+        },
+        duration_minutes: {
+          type: 'number',
+          description: 'Meeting duration in minutes (default 30)',
+        },
+        attendees: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Email addresses of attendees',
+        },
+        location: {
+          type: 'string',
+          description: 'Meeting location or video call link',
+        },
+      },
+    },
+  },
+
+  {
     name: 'create_supplier_note',
     description: 'Add an internal note to the Pipedrive org. Optionally pin it.',
     input_schema: {

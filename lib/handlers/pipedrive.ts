@@ -138,6 +138,9 @@ export const PIPELINE_11_STAGES = [
   { id: 373, name: 'NBM Gate' },
   { id: 60,  name: 'Onboarding' },
   { id: 163, name: 'Masterdata' },
+  { id: 389, name: 'Pending Answer' },
+  { id: 390, name: 'Pending Meeting' },
+  { id: 392, name: 'Pending Action' },
   { id: 204, name: 'Go-Live Gate' },
   { id: 244, name: 'Content' },
   { id: 381, name: 'MOV' },
@@ -149,6 +152,11 @@ export const PIPELINE_11_STAGES = [
   { id: 377, name: 'Growth Roadmap' },
   { id: 378, name: 'Negotiate' },
 ];
+
+// Operational stage IDs for quick reference
+export const STAGE_PENDING_ANSWER  = 389;
+export const STAGE_PENDING_MEETING = 390;
+export const STAGE_PENDING_ACTION  = 392;
 
 const STAGE_ID_TO_ORDER = new Map(PIPELINE_11_STAGES.map((s, i) => [s.id, i]));
 const STAGE_ID_TO_NAME  = new Map(PIPELINE_11_STAGES.map((s) => [s.id, s.name]));

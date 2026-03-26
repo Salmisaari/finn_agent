@@ -6,9 +6,11 @@ import {
   getPipeline11Deal,
   getAllPipeline11Deals,
   advancePipelineDeal,
+  setDealStage,
   createOrgNote,
   PIPELINE_11_STAGES,
 } from '@/lib/handlers/pipedrive';
+import { createCalendarEvent } from '@/lib/handlers/calendar';
 import {
   getSupplierProfile,
   getSupplierWithPerformance,
@@ -344,6 +346,59 @@ export async function executeTool(
           (input.pin as boolean) || false
         );
         return { success: true, data: { note_id } };
+      }
+
+      case 'move_to_stage': {
+        const orgId = input.org_id as number;
+        const stageName = input.stage_name as string;
+        const reason = input.reason as string;
+
+        // Find stage ID by name
+        const targetStage = PIPELINE_11_STAGES.find(
+          (s) => s.name.toLowerCase() === stageName.toLowerCase()
+        );
+        if (!targetStage) {
+          return {
+            success: false,
+            error: `Unknown stage: "${stageName}". Valid: ${PIPELINE_11_STAGES.map((s) => s.name).join(', ')}`,
+          };
+        }
+
+        // Find the deal for this org
+        const deal = await getPipeline11Deal(orgId);
+        if (!deal) {
+          return { success: false, error: 'No open Pipeline 11 deal found for this org' };
+        }
+
+        await setDealStage(deal.id, targetStage.id);
+
+        // Log the move
+        await logSupplierInteraction(
+          orgId,
+          'pipeline_move',
+          `Moved from ${deal.stage_name} to ${targetStage.name}. Reason: ${reason}`,
+        ).catch(() => {});
+        await bustSupplierCache(orgId);
+
+        return {
+          success: true,
+          data: { from_stage: deal.stage_name, to_stage: targetStage.name },
+        };
+      }
+
+      case 'create_calendar_event': {
+        const result = await createCalendarEvent({
+          summary: input.summary as string,
+          description: input.description as string | undefined,
+          start_time: input.start_time as string,
+          duration_minutes: (input.duration_minutes as number) || 30,
+          attendees: input.attendees as string[] | undefined,
+          location: input.location as string | undefined,
+        });
+
+        return result.success
+          ? { success: true, data: result }
+          : { success: false, error: result.error };
       }
 
       // ========================================
