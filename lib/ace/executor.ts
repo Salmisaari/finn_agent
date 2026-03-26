@@ -26,6 +26,7 @@ import {
   gmail_fetchAttachments,
   gmail_downloadAttachment,
 } from '@/lib/handlers/gmail';
+import { updateTransitionField, updateMastertabField } from '@/lib/handlers/sheets';
 import { postToSlackChannel } from '@/lib/handlers/slack';
 
 export async function executeTool(
@@ -493,6 +494,28 @@ export async function executeTool(
 
         return result.success
           ? { success: true, data: result }
+          : { success: false, error: result.error };
+      }
+
+      // ========================================
+      case 'update_sheet': {
+        const prefix = input.prefix as string;
+        const tab = input.tab as string;
+        const field = input.field as string;
+        const value = input.value as string;
+        const supplierName = input.supplier_name as string | undefined;
+
+        let result;
+        if (tab === 'transition') {
+          result = await updateTransitionField(prefix, field, value, supplierName);
+        } else if (tab === 'mastertab') {
+          result = await updateMastertabField(prefix, field, value);
+        } else {
+          return { success: false, error: `Unknown tab: ${tab}. Use "transition" or "mastertab".` };
+        }
+
+        return result.success
+          ? { success: true, data: { updated: result.cell, tab, field, value } }
           : { success: false, error: result.error };
       }
 

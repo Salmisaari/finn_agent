@@ -454,6 +454,44 @@ export const FINN_TOOL_DEFINITIONS: ToolDefinition[] = [
 
   // ========================================
   // TEAM COMMUNICATION
+  {
+    name: 'update_sheet',
+    description:
+      'Update a field in the Supplier Mastertab or 2026 Transition spreadsheet. ' +
+      'Use for recording price list updates, changing ops status, updating SKU counts, etc. ' +
+      'For Mastertab: catalog_type, available_skus, source_language, source_currency, raw_data_folder. ' +
+      'For 2026 Transition: price_update_status, price_list_link, ops_stop_date, ops_resume_date.',
+    input_schema: {
+      type: 'object',
+      required: ['prefix', 'tab', 'field', 'value'],
+      properties: {
+        prefix: {
+          type: 'string',
+          description: '3-letter SKU prefix (BLK, ARB, UNG...)',
+        },
+        tab: {
+          type: 'string',
+          enum: ['transition', 'mastertab'],
+          description: 'Which sheet tab to update',
+        },
+        field: {
+          type: 'string',
+          description: 'Field name to update (e.g. price_update_status, price_list_link, available_skus)',
+        },
+        value: {
+          type: 'string',
+          description: 'New value',
+        },
+        supplier_name: {
+          type: 'string',
+          description: 'Supplier name (fallback if prefix lookup fails)',
+        },
+      },
+    },
+  },
+
+  // ========================================
+  // TEAM COMMUNICATION
   // ========================================
 
   {

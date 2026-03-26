@@ -20,7 +20,7 @@ function getSheetsClient() {
     const auth = new google.auth.JWT({
       email: key.client_email,
       key: key.private_key,
-      scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
       subject: SHEETS_IMPERSONATE_USER,
     });
     return google.sheets({ version: 'v4', auth });
@@ -349,4 +349,135 @@ function findFieldValue(obj: Record<string, string>, keys: string[]): string | u
     }
   }
   return undefined;
+}
+
+// ========================================
+// WRITE: Update a cell in a sheet
+// ========================================
+
+async function updateCell(
+  spreadsheetId: string,
+  tabName: string,
+  cell: string,
+  value: string
+): Promise<void> {
+  const sheets = getSheetsClient();
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `'${tabName}'!${cell}`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [[value]] },
+  });
+}
+
+// ========================================
+// WRITE: Update a row by finding it first
+// ========================================
+
+async function updateRowField(
+  spreadsheetId: string,
+  tabName: string,
+  lookupColumnCandidates: string[],
+  lookupValue: string,
+  targetColumnCandidates: string[],
+  newValue: string
+): Promise<{ success: boolean; cell?: string; error?: string }> {
+  try {
+    const { headers, rows } = await readSheet(spreadsheetId, tabName);
+
+    const lookupColIdx = findColumn(headers, lookupColumnCandidates);
+    if (lookupColIdx < 0) {
+      return { success: false, error: `Lookup column not found: ${lookupColumnCandidates.join('/')}` };
+    }
+
+    const targetColIdx = findColumn(headers, targetColumnCandidates);
+    if (targetColIdx < 0) {
+      return { success: false, error: `Target column not found: ${targetColumnCandidates.join('/')}` };
+    }
+
+    const target = lookupValue.toLowerCase().trim();
+    const rowIdx = rows.findIndex((r) => (r[lookupColIdx] || '').toLowerCase().trim() === target);
+    if (rowIdx < 0) {
+      return { success: false, error: `Row not found for "${lookupValue}"` };
+    }
+
+    // Convert to A1 notation (row +2 because headers are row 1 and rows are 0-indexed)
+    const colLetter = String.fromCharCode(65 + targetColIdx);
+    const cellRef = `${colLetter}${rowIdx + 2}`;
+
+    await updateCell(spreadsheetId, tabName, cellRef, newValue);
+    return { success: true, cell: `${tabName}!${cellRef}` };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+  }
+}
+
+// ========================================
+// WRITE: Update 2026 Transition tab (price list tracking)
+// ========================================
+
+export async function updateTransitionField(
+  prefix: string,
+  field: string,
+  value: string,
+  supplierName?: string
+): Promise<{ success: boolean; cell?: string; error?: string }> {
+  const fieldMap: Record<string, string[]> = {
+    price_update_status: ['status', 'price status', 'price update', 'update status'],
+    price_list_link: ['price list', 'price list link', 'link'],
+    ops_stop_date: ['ops stop', 'stop date', 'paused'],
+    ops_resume_date: ['ops resume', 'resume date', 'resumed'],
+  };
+
+  const targetColumns = fieldMap[field];
+  if (!targetColumns) {
+    return { success: false, error: `Unknown field: ${field}. Valid: ${Object.keys(fieldMap).join(', ')}` };
+  }
+
+  // Try by prefix first
+  let result = await updateRowField(
+    SHEET_MASTERTAB_ID, '2026 Transition',
+    ['prefix', 'code', 'sku'], prefix,
+    targetColumns, value
+  );
+
+  // Fallback: try by supplier name
+  if (!result.success && supplierName) {
+    result = await updateRowField(
+      SHEET_MASTERTAB_ID, '2026 Transition',
+      ['supplier', 'supplier name', 'name', 'brand'], supplierName,
+      targetColumns, value
+    );
+  }
+
+  return result;
+}
+
+// ========================================
+// WRITE: Update Mastertab (supplier operational data)
+// ========================================
+
+export async function updateMastertabField(
+  prefix: string,
+  field: string,
+  value: string
+): Promise<{ success: boolean; cell?: string; error?: string }> {
+  const fieldMap: Record<string, string[]> = {
+    catalog_type: ['catalog type', 'type', 'catalog'],
+    available_skus: ['available skus', 'skus', 'sku count'],
+    source_language: ['language', 'source language', 'lang'],
+    source_currency: ['currency', 'source currency'],
+    raw_data_folder: ['folder', 'raw data folder', 'data folder'],
+  };
+
+  const targetColumns = fieldMap[field];
+  if (!targetColumns) {
+    return { success: false, error: `Unknown field: ${field}. Valid: ${Object.keys(fieldMap).join(', ')}` };
+  }
+
+  return updateRowField(
+    SHEET_MASTERTAB_ID, 'Supplier Mastertab',
+    ['prefix', 'code', 'sku', 'short', 'id'], prefix,
+    targetColumns, value
+  );
 }
