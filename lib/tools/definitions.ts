@@ -39,6 +39,36 @@ export const FINN_TOOL_DEFINITIONS: ToolDefinition[] = [
   },
 
   {
+    name: 'gather_supplier_context',
+    description:
+      'THE PRIMARY TOOL for answering questions about suppliers. Loads EVERYTHING in one call: ' +
+      'full Pipedrive profile + recent emails from ALL mailboxes (finn@, oskar@, jonas@, orders@) + negotiation signals. ' +
+      'ALWAYS use this instead of get_supplier when the question is about recent activity, latest news, updates, or general "what do we know". ' +
+      'Use get_supplier only for quick field lookups where email context is unnecessary.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: 'Supplier or brand name (partial match ok)',
+        },
+        org_id: {
+          type: 'number',
+          description: 'Pipedrive org ID if known',
+        },
+        prefix: {
+          type: 'string',
+          description: '3-letter SKU prefix (BLK, ARB, NMN...)',
+        },
+        days_back: {
+          type: 'number',
+          description: 'How many days of email history to search (default 30)',
+        },
+      },
+    },
+  },
+
+  {
     name: 'get_negotiation_signals',
     description:
       'Run a full negotiation intelligence check for a supplier. ' +
@@ -169,8 +199,9 @@ export const FINN_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'get_email_attachments',
     description:
-      'List attachments in an email thread. Returns filename, type, size, and which message they came from. ' +
-      'Use this when asked about documents, price lists, catalogs, or files a supplier sent.',
+      'List attachments in an email thread AND optionally share one to the current Slack thread. ' +
+      'Returns filename, type, size, and which message they came from. ' +
+      'Set share_to_slack=true and specify a filename to upload the file to the Slack conversation.',
     input_schema: {
       type: 'object',
       required: ['thread_id'],
@@ -187,6 +218,10 @@ export const FINN_TOOL_DEFINITIONS: ToolDefinition[] = [
         filename_filter: {
           type: 'string',
           description: 'Only return attachments whose filename contains this string (case-insensitive)',
+        },
+        share_to_slack: {
+          type: 'boolean',
+          description: 'If true, download the matching attachment and upload it to the current Slack thread',
         },
       },
     },

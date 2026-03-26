@@ -87,7 +87,8 @@ Six integration requirements for a fully live supplier:
 
 const TOOL_INDEX = `## Tools (use in order of need)
 
-START: get_supplier — load full profile before any action
+START: gather_supplier_context — THE DEFAULT. Loads profile + emails from ALL mailboxes in one call. Use this for any question about a supplier.
+QUICK: get_supplier — profile only, no emails. Use only for quick field lookups.
 INTEL: get_negotiation_signals — what to negotiate next
 FUNNEL: get_pipeline_overview — full Pipeline 11 view
 PERF: get_supplier_performance — GMV, ROAS, margin trends

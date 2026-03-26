@@ -22,6 +22,14 @@ type AllowedMailbox = typeof ALLOWED_MAILBOXES[number];
 
 const FINN_MAILBOX = 'finn@droppe.com';
 
+// All mailboxes to search for supplier context
+export const ALL_SEARCH_MAILBOXES = [
+  'finn@droppe.com',
+  'oskar@droppe.fi',
+  'jonas@droppe.fi',
+  'orders@droppe.com',
+] as const;
+
 function assertAllowedMailbox(email: string): asserts email is AllowedMailbox {
   if (!ALLOWED_MAILBOXES.includes(email as AllowedMailbox)) {
     throw new Error(
@@ -400,6 +408,94 @@ export async function gmail_fetchAttachments(
       attachments: [],
       error: err instanceof Error ? err.message : 'Unknown error',
     };
+  }
+}
+
+// ========================================
+// CHECK FOR REPLIES (used by follow-up automation)
+// ========================================
+
+// ========================================
+// MULTI-MAILBOX SEARCH (consolidated context)
+// ========================================
+
+export interface MultiMailboxResult {
+  mailbox: string;
+  threads: EmailThreadSummary[];
+}
+
+export async function gmail_searchAllMailboxes(opts: {
+  query: string;
+  supplier_name?: string;
+  days_back?: number;
+}): Promise<MultiMailboxResult[]> {
+  const results = await Promise.all(
+    ALL_SEARCH_MAILBOXES.map(async (mailbox) => {
+      try {
+        const threads = await gmail_searchThreads({
+          ...opts,
+          mailbox,
+        });
+        return { mailbox, threads };
+      } catch (err) {
+        console.warn(`[gmail] Search failed for ${mailbox}:`, err);
+        return { mailbox, threads: [] };
+      }
+    })
+  );
+
+  // Only return mailboxes that had results
+  return results.filter((r) => r.threads.length > 0);
+}
+
+// ========================================
+// DOWNLOAD ATTACHMENT (returns Buffer for forwarding)
+// ========================================
+
+export async function gmail_downloadAttachment(
+  threadId: string,
+  filename: string,
+  mailbox?: string
+): Promise<{ buffer: Buffer; mimeType: string; filename: string } | null> {
+  try {
+    const gmail = getGmailClient(mailbox || FINN_MAILBOX);
+
+    const threadRes = await gmail.users.threads.get({
+      userId: 'me',
+      id: threadId,
+    });
+
+    const messages = threadRes.data.messages || [];
+
+    for (const message of messages) {
+      const parts = collectParts(message.payload);
+      for (const part of parts) {
+        const partFilename = part.filename || '';
+        if (!partFilename.toLowerCase().includes(filename.toLowerCase())) continue;
+
+        const attachmentId = part.body?.attachmentId;
+        if (!attachmentId) continue;
+
+        const attRes = await gmail.users.messages.attachments.get({
+          userId: 'me',
+          messageId: message.id!,
+          id: attachmentId,
+        });
+
+        if (attRes.data.data) {
+          return {
+            buffer: Buffer.from(attRes.data.data, 'base64url'),
+            mimeType: part.mimeType || 'application/octet-stream',
+            filename: partFilename,
+          };
+        }
+      }
+    }
+
+    return null;
+  } catch (err) {
+    console.error('[gmail] Download attachment error:', err);
+    return null;
   }
 }
 

@@ -13,6 +13,7 @@ import {
 import { createCalendarEvent } from '@/lib/handlers/calendar';
 import {
   getSupplierProfile,
+  getSupplierContext,
   getSupplierWithPerformance,
   updateSupplierField,
   logSupplierInteraction,
@@ -23,6 +24,7 @@ import {
   gmail_getThread,
   gmail_sendMessage,
   gmail_fetchAttachments,
+  gmail_downloadAttachment,
 } from '@/lib/handlers/gmail';
 import { postToSlackChannel } from '@/lib/handlers/slack';
 
@@ -61,6 +63,47 @@ export async function executeTool(
         }
 
         return { success: true, data: result.profile };
+      }
+
+      case 'gather_supplier_context': {
+        const ctxResult = await getSupplierContext({
+          name: input.name as string | undefined,
+          org_id: input.org_id as number | undefined,
+          prefix: input.prefix as string | undefined,
+          days_back: input.days_back as number | undefined,
+        });
+
+        if (!ctxResult.found || !ctxResult.context) {
+          if (ctxResult.candidates?.length) {
+            return {
+              success: false,
+              error: `Multiple matches found. Specify one: ${ctxResult.candidates.join(' | ')}`,
+            };
+          }
+          return {
+            success: false,
+            error: `No supplier found for: ${JSON.stringify(input)}. Try a different name or check Pipedrive.`,
+          };
+        }
+
+        const ctx = ctxResult.context;
+        return {
+          success: true,
+          data: {
+            profile: ctx.profile,
+            email_summary: ctx.email_summary,
+            recent_emails: ctx.recent_emails.map((r) => ({
+              mailbox: r.mailbox,
+              threads: r.threads.map((t) => ({
+                thread_id: t.thread_id,
+                subject: t.subject,
+                from: t.from,
+                date: t.date,
+                snippet: t.snippet,
+              })),
+            })),
+          },
+        };
       }
 
       case 'get_negotiation_signals': {
@@ -248,6 +291,58 @@ export async function executeTool(
             success: true,
             data: { attachments: [], message: 'No attachments found in this thread' },
           };
+        }
+
+        // If share_to_slack requested, download and upload the first matching file
+        if (input.share_to_slack && input.filename_filter && _callerContext?.slackChannel) {
+          const downloaded = await gmail_downloadAttachment(
+            input.thread_id as string,
+            input.filename_filter as string,
+            input.mailbox as string | undefined
+          );
+
+          if (downloaded) {
+            try {
+              const botToken = process.env.SLACK_BOT_TOKEN;
+              if (botToken) {
+                // Step 1: Get upload URL
+                const getUrlRes = await fetch('https://slack.com/api/files.getUploadURLExternal', {
+                  method: 'POST',
+                  headers: {
+                    Authorization: `Bearer ${botToken}`,
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                  },
+                  body: `filename=${encodeURIComponent(downloaded.filename)}&length=${downloaded.buffer.length}`,
+                });
+                const urlData = await getUrlRes.json();
+
+                if (urlData.ok) {
+                  // Step 2: Upload file (convert Buffer to Uint8Array for fetch)
+                  await fetch(urlData.upload_url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': downloaded.mimeType },
+                    body: new Uint8Array(downloaded.buffer),
+                  });
+
+                  // Step 3: Complete upload
+                  await fetch('https://slack.com/api/files.completeUploadExternal', {
+                    method: 'POST',
+                    headers: {
+                      Authorization: `Bearer ${botToken}`,
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      files: [{ id: urlData.file_id, title: downloaded.filename }],
+                      channel_id: _callerContext.slackChannel,
+                      thread_ts: _callerContext.slackThreadTs,
+                    }),
+                  });
+                }
+              }
+            } catch (uploadErr) {
+              console.error('[finn] Slack file upload error:', uploadErr);
+            }
+          }
         }
 
         return {

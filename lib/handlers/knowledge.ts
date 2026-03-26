@@ -487,6 +487,66 @@ export async function getSupplierProfile(opts: {
 }
 
 // ========================================
+// CONSOLIDATED SUPPLIER CONTEXT
+// One call to rule them all — profile + emails from ALL mailboxes
+// ========================================
+
+import {
+  gmail_searchAllMailboxes,
+  type MultiMailboxResult,
+} from './gmail';
+
+export interface SupplierContext {
+  profile: SupplierProfile;
+  recent_emails: MultiMailboxResult[];
+  email_summary: string;
+}
+
+export async function getSupplierContext(opts: {
+  name?: string;
+  prefix?: string;
+  org_id?: number;
+  days_back?: number;
+}): Promise<{ context: SupplierContext | null; found: boolean; candidates?: string[] }> {
+  // Load profile and search emails in parallel
+  const profilePromise = getSupplierProfile(opts);
+  const emailPromise = gmail_searchAllMailboxes({
+    query: '',
+    supplier_name: opts.name || opts.prefix,
+    days_back: opts.days_back || 30,
+  }).catch(() => [] as MultiMailboxResult[]);
+
+  const [profileResult, emailResults] = await Promise.all([profilePromise, emailPromise]);
+
+  if (!profileResult.found || !profileResult.profile) {
+    return { context: null, found: false, candidates: profileResult.candidates };
+  }
+
+  // Build email summary
+  const totalThreads = emailResults.reduce((sum, r) => sum + r.threads.length, 0);
+  const summaryParts: string[] = [];
+  for (const r of emailResults) {
+    summaryParts.push(`${r.mailbox}: ${r.threads.length} thread(s)`);
+    for (const t of r.threads.slice(0, 3)) {
+      summaryParts.push(`  - "${t.subject}" (${t.date}) from ${t.from}`);
+    }
+  }
+
+  const emailSummary = totalThreads === 0
+    ? 'No recent emails found across any mailbox in the last 30 days.'
+    : `${totalThreads} email thread(s) found:\n${summaryParts.join('\n')}`;
+
+  return {
+    context: {
+      profile: profileResult.profile,
+      recent_emails: emailResults,
+      email_summary: emailSummary,
+    },
+    found: true,
+  };
+}
+
+// ========================================
 // GET SUPPLIER WITH PERFORMANCE DATA
 // ========================================
 
