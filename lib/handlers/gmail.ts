@@ -422,6 +422,7 @@ export async function gmail_fetchAttachments(
 export interface MultiMailboxResult {
   mailbox: string;
   threads: EmailThreadSummary[];
+  error?: string;
 }
 
 export async function gmail_searchAllMailboxes(opts: {
@@ -438,14 +439,15 @@ export async function gmail_searchAllMailboxes(opts: {
         });
         return { mailbox, threads };
       } catch (err) {
-        console.warn(`[gmail] Search failed for ${mailbox}:`, err);
-        return { mailbox, threads: [] };
+        const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+        console.error(`[gmail] Search FAILED for ${mailbox}:`, errorMsg);
+        return { mailbox, threads: [], error: `Failed to search ${mailbox}: ${errorMsg}` };
       }
     })
   );
 
-  // Only return mailboxes that had results
-  return results.filter((r) => r.threads.length > 0);
+  // Return ALL results including failures — so the model knows what it couldn't access
+  return results;
 }
 
 // ========================================

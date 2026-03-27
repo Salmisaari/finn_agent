@@ -522,19 +522,35 @@ export async function getSupplierContext(opts: {
     return { context: null, found: false, candidates: profileResult.candidates };
   }
 
-  // Build email summary
+  // Build email summary — surface errors so the model doesn't claim "no emails" when search failed
   const totalThreads = emailResults.reduce((sum, r) => sum + r.threads.length, 0);
+  const errors = emailResults.filter((r) => r.error);
   const summaryParts: string[] = [];
+
+  if (errors.length > 0) {
+    summaryParts.push('WARNING — some mailbox searches failed:');
+    for (const e of errors) {
+      summaryParts.push(`  ERROR: ${e.error}`);
+    }
+    summaryParts.push('Results below may be incomplete. Tell the team which mailboxes could not be searched.');
+    summaryParts.push('');
+  }
+
   for (const r of emailResults) {
-    summaryParts.push(`${r.mailbox}: ${r.threads.length} thread(s)`);
-    for (const t of r.threads.slice(0, 3)) {
-      summaryParts.push(`  - "${t.subject}" (${t.date}) from ${t.from}`);
+    if (r.error) {
+      summaryParts.push(`${r.mailbox}: SEARCH FAILED — ${r.error}`);
+    } else {
+      summaryParts.push(`${r.mailbox}: ${r.threads.length} thread(s)`);
+      for (const t of r.threads.slice(0, 3)) {
+        summaryParts.push(`  - "${t.subject}" (${t.date}) from ${t.from}`);
+      }
     }
   }
 
-  const emailSummary = totalThreads === 0
-    ? 'No recent emails found across any mailbox in the last 30 days.'
-    : `${totalThreads} email thread(s) found:\n${summaryParts.join('\n')}`;
+  const successfulSearches = emailResults.filter((r) => !r.error);
+  const emailSummary = totalThreads === 0 && errors.length === 0
+    ? `No recent emails found across ${successfulSearches.length} mailbox(es) in the last 30 days.`
+    : summaryParts.join('\n');
 
   return {
     context: {

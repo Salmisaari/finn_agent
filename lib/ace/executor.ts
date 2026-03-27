@@ -95,6 +95,7 @@ export async function executeTool(
             email_summary: ctx.email_summary,
             recent_emails: ctx.recent_emails.map((r) => ({
               mailbox: r.mailbox,
+              error: r.error || undefined,
               threads: r.threads.map((t) => ({
                 thread_id: t.thread_id,
                 subject: t.subject,
