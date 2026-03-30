@@ -564,4 +564,105 @@ export const FINN_TOOL_DEFINITIONS: ToolDefinition[] = [
       },
     },
   },
+
+  // ========================================
+  // PROJECTS (sales cases, market initiatives)
+  // ========================================
+
+  {
+    name: 'manage_project',
+    description:
+      'Manage a sales project/case. Projects track market theses, supplier positions, ' +
+      'intel signals, actions, and proposals. One tool handles all project operations. ' +
+      'Use for: creating projects, adding intel, tracking supplier positions, managing actions, ' +
+      'updating thesis, viewing dashboard. ' +
+      'Example projects: "nitrile supply crisis", "DACH expansion", "co-ad rollout".',
+    input_schema: {
+      type: 'object',
+      required: ['operation'],
+      properties: {
+        operation: {
+          type: 'string',
+          enum: [
+            'create', 'dashboard', 'list',
+            'add_intel', 'update_thesis',
+            'set_position', 'add_action', 'complete_action',
+            'add_proposal',
+          ],
+          description: 'What to do with the project',
+        },
+        project_id: {
+          type: 'string',
+          description: 'Project ID (e.g. "nitrile-2026"). Required for all ops except "list" and "create".',
+        },
+        // For create
+        name: {
+          type: 'string',
+          description: 'Project name (for create)',
+        },
+        category: {
+          type: 'string',
+          description: 'Category: disposables, workwear, safety, etc. (for create)',
+        },
+        thesis: {
+          type: 'string',
+          description: 'Project thesis / market context (for create and update_thesis)',
+        },
+        // For add_intel
+        source: {
+          type: 'string',
+          description: 'Intel source — supplier name, market report, email, etc.',
+        },
+        signal: {
+          type: 'string',
+          description: 'What was learned (for add_intel)',
+        },
+        // For set_position
+        supplier: {
+          type: 'string',
+          description: 'Supplier name (for set_position)',
+        },
+        prefix: {
+          type: 'string',
+          description: 'SKU prefix (for set_position)',
+        },
+        supplier_status: {
+          type: 'string',
+          enum: ['monitoring', 'contacted', 'negotiating', 'locked', 'blocked', 'lost'],
+          description: 'Supplier status in this project (for set_position)',
+        },
+        price_offered: {
+          type: 'string',
+          description: 'Price offered/quoted (for set_position)',
+        },
+        notes: {
+          type: 'string',
+          description: 'Notes about this supplier position (for set_position)',
+        },
+        // For add_action
+        action: {
+          type: 'string',
+          description: 'Action to take (for add_action)',
+        },
+        owner: {
+          type: 'string',
+          description: 'Who owns this action: Finn, Johannes, Oskar, Jarno (for add_action)',
+        },
+        due: {
+          type: 'string',
+          description: 'Due date YYYY-MM-DD (for add_action)',
+        },
+        // For complete_action
+        action_id: {
+          type: 'string',
+          description: 'Action ID to complete (for complete_action)',
+        },
+        // For add_proposal
+        proposal: {
+          type: 'string',
+          description: 'Proposal text — a pitch angle or offer to use with suppliers (for add_proposal)',
+        },
+      },
+    },
+  },
 ];

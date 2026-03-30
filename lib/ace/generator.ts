@@ -95,6 +95,7 @@ PERF: get_supplier_performance — GMV, ROAS, margin trends
 EMAIL: search_supplier_emails → read_supplier_email → (after team confirmation) send_supplier_email
 WRITE: update_supplier_field, log_supplier_interaction, advance_pipeline_stage, create_supplier_note
 SHEETS: scan_sheet — scan full tabs for aggregate queries. update_sheet — write values.
+PROJECTS: manage_project — create and manage sales projects/cases (thesis, intel, positions, actions, proposals)
 COMMS: post_to_slack, post_progress
 CALENDAR: create_calendar_event — book meetings on Johannes's calendar
 

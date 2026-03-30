@@ -28,6 +28,19 @@ import {
 } from '@/lib/handlers/gmail';
 import { updateTransitionField, updateMastertabField, scanSheet } from '@/lib/handlers/sheets';
 import { postToSlackChannel, sendSlackMessage } from '@/lib/handlers/slack';
+import {
+  createProject,
+  getProject,
+  listProjects,
+  addIntel,
+  updateThesis,
+  setSupplierPosition,
+  addAction,
+  completeAction,
+  addProposal,
+  formatProjectDashboard,
+  type SupplierStatus,
+} from '@/lib/handlers/projects';
 
 export async function executeTool(
   toolName: string,
@@ -562,6 +575,125 @@ export async function executeTool(
         return result.ok
           ? { success: true, data: { ts: result.ts } }
           : { success: false, error: result.error };
+      }
+
+      case 'manage_project': {
+        const op = input.operation as string;
+        const projectId = input.project_id as string;
+
+        switch (op) {
+          case 'create': {
+            if (!input.name || !input.category || !input.thesis) {
+              return { success: false, error: 'create requires name, category, and thesis' };
+            }
+            const id = projectId || (input.name as string).toLowerCase().replace(/[^a-z0-9]+/g, '-');
+            const project = await createProject({
+              id,
+              name: input.name as string,
+              category: input.category as string,
+              thesis: input.thesis as string,
+            });
+            return { success: true, data: { project_id: project.id, message: `Project "${project.name}" created` } };
+          }
+
+          case 'list': {
+            const projects = await listProjects();
+            return {
+              success: true,
+              data: projects.map((p) => ({
+                id: p.id,
+                name: p.name,
+                status: p.status,
+                category: p.category,
+                positions: p.positions.length,
+                intel: p.intel.length,
+                open_actions: p.actions.filter((a) => !a.done).length,
+              })),
+            };
+          }
+
+          case 'dashboard': {
+            if (!projectId) return { success: false, error: 'project_id required' };
+            const project = await getProject(projectId);
+            if (!project) return { success: false, error: `Project "${projectId}" not found` };
+            return { success: true, data: { dashboard: formatProjectDashboard(project), raw: project } };
+          }
+
+          case 'add_intel': {
+            if (!projectId || !input.source || !input.signal) {
+              return { success: false, error: 'project_id, source, and signal required' };
+            }
+            const updated = await addIntel(projectId, input.source as string, input.signal as string);
+            return updated
+              ? { success: true, data: { intel_count: updated.intel.length } }
+              : { success: false, error: `Project "${projectId}" not found` };
+          }
+
+          case 'update_thesis': {
+            if (!projectId || !input.thesis) {
+              return { success: false, error: 'project_id and thesis required' };
+            }
+            const updated = await updateThesis(projectId, input.thesis as string);
+            return updated
+              ? { success: true, data: { updated: true } }
+              : { success: false, error: `Project "${projectId}" not found` };
+          }
+
+          case 'set_position': {
+            if (!projectId || !input.supplier) {
+              return { success: false, error: 'project_id and supplier required' };
+            }
+            const updated = await setSupplierPosition(projectId, {
+              supplier: input.supplier as string,
+              prefix: input.prefix as string | undefined,
+              status: (input.supplier_status as SupplierStatus) || 'monitoring',
+              price_offered: input.price_offered as string | undefined,
+              notes: (input.notes as string) || '',
+              last_updated: new Date().toISOString().split('T')[0],
+            });
+            return updated
+              ? { success: true, data: { positions: updated.positions.length } }
+              : { success: false, error: `Project "${projectId}" not found` };
+          }
+
+          case 'add_action': {
+            if (!projectId || !input.action || !input.owner) {
+              return { success: false, error: 'project_id, action, and owner required' };
+            }
+            const updated = await addAction(
+              projectId,
+              input.action as string,
+              input.owner as string,
+              input.due as string | undefined
+            );
+            return updated
+              ? { success: true, data: { open_actions: updated.actions.filter((a) => !a.done).length } }
+              : { success: false, error: `Project "${projectId}" not found` };
+          }
+
+          case 'complete_action': {
+            if (!projectId || !input.action_id) {
+              return { success: false, error: 'project_id and action_id required' };
+            }
+            const updated = await completeAction(projectId, input.action_id as string);
+            return updated
+              ? { success: true, data: { completed: true } }
+              : { success: false, error: `Project "${projectId}" not found` };
+          }
+
+          case 'add_proposal': {
+            if (!projectId || !input.proposal) {
+              return { success: false, error: 'project_id and proposal required' };
+            }
+            const updated = await addProposal(projectId, input.proposal as string);
+            return updated
+              ? { success: true, data: { proposals: updated.proposals.length } }
+              : { success: false, error: `Project "${projectId}" not found` };
+          }
+
+          default:
+            return { success: false, error: `Unknown project operation: ${op}` };
+        }
       }
 
       case 'post_progress': {
