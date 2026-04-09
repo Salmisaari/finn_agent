@@ -453,7 +453,226 @@ export const FINN_TOOL_DEFINITIONS: ToolDefinition[] = [
   },
 
   // ========================================
-  // TEAM COMMUNICATION
+  // QUOTES
+  // ========================================
+
+  {
+    name: 'generate_quote',
+    description:
+      'Generate a structured customer quote email. Builds a professional quote from deal parameters. ' +
+      'Language is auto-detected from customer_country (FI→Finnish, DE→German, SE→Swedish, else English). ' +
+      'You can override with language param. Always look up the customer in Pipedrive first to get their country. ' +
+      'After generating, post the full draft to Slack. Team can either: ' +
+      '(a) approve for Finn to send via send_supplier_email, or ' +
+      '(b) copy-paste the draft to send from their own email. ' +
+      'Both workflows are valid — ask which they prefer.',
+    input_schema: {
+      type: 'object',
+      required: ['customer_name', 'line_items', 'payment', 'delivery'],
+      properties: {
+        customer_name: {
+          type: 'string',
+          description: 'Customer/organization name',
+        },
+        contact_name: {
+          type: 'string',
+          description: 'Contact person name (for greeting)',
+        },
+        contact_email: {
+          type: 'string',
+          description: 'Contact email (for sending after approval)',
+        },
+        customer_country: {
+          type: 'string',
+          description: 'Customer country (ISO code or name, e.g. "FI", "DE", "SE", "Finland"). Auto-detects quote language. Always look this up from Pipedrive org data.',
+        },
+        customer_context: {
+          type: 'string',
+          description: 'What the customer needs this for (e.g. "reserve stock for healthcare contracts"). Used in opening paragraph.',
+        },
+        line_items: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['product', 'quantity', 'unit_price', 'currency', 'unit'],
+            properties: {
+              product: {
+                type: 'string',
+                description: 'Product description (e.g. "Blue nitrile examination gloves, 4g")',
+              },
+              specs: {
+                type: 'string',
+                description: 'Certifications/specs (e.g. "EN 455, 37% formaldehyde tested")',
+              },
+              brand: {
+                type: 'string',
+                description: 'Brand/manufacturer (e.g. "Intco Medical (OEM)")',
+              },
+              quantity: {
+                type: 'string',
+                description: 'Order quantity (e.g. "10000 boxes")',
+              },
+              unit_price: {
+                type: 'string',
+                description: 'Price per unit (e.g. "3.60")',
+              },
+              currency: {
+                type: 'string',
+                description: 'Currency: EUR, USD, SEK, GBP',
+              },
+              unit: {
+                type: 'string',
+                description: 'Unit of measure (e.g. "box (100 pcs)", "pair", "carton")',
+              },
+              moq: {
+                type: 'string',
+                description: 'Minimum order quantity if applicable',
+              },
+            },
+          },
+          description: 'Products being quoted',
+        },
+        payment: {
+          type: 'object',
+          required: ['structure'],
+          properties: {
+            structure: {
+              type: 'string',
+              description: 'Payment structure label (e.g. "30/70", "net30", "100% prepay")',
+            },
+            prepay_pct: {
+              type: 'number',
+              description: 'Prepayment percentage (e.g. 30)',
+            },
+            on_delivery_pct: {
+              type: 'number',
+              description: 'On-delivery percentage (e.g. 70)',
+            },
+            net_days: {
+              type: 'number',
+              description: 'Net payment days (e.g. 30)',
+            },
+            notes: {
+              type: 'string',
+              description: 'Additional payment context (e.g. "Supplier requires prepayment for production run")',
+            },
+          },
+          description: 'Payment terms',
+        },
+        delivery: {
+          type: 'object',
+          required: ['timeline'],
+          properties: {
+            timeline: {
+              type: 'string',
+              description: 'Delivery timeline (e.g. "2-3 weeks from order confirmation")',
+            },
+            incoterms: {
+              type: 'string',
+              description: 'Incoterms (e.g. "DDP", "EXW", "CIF")',
+            },
+            warehouse: {
+              type: 'string',
+              description: 'Ship-from location (e.g. "EU warehouse, Netherlands")',
+            },
+            shipping_notes: {
+              type: 'string',
+              description: 'Shipping details (e.g. "Freight included in unit price")',
+            },
+          },
+          description: 'Delivery terms',
+        },
+        market_context: {
+          type: 'object',
+          properties: {
+            situation: {
+              type: 'string',
+              description: 'Brief market situation (e.g. "Global nitrile supply constrained due to raw material shortages")',
+            },
+            price_justification: {
+              type: 'string',
+              description: 'Why this price is fair (e.g. "Current spot market at €4.20, this is pre-committed stock")',
+            },
+            urgency_driver: {
+              type: 'string',
+              description: 'Why act now (e.g. "Available EU stock is limited and allocated on first-come basis")',
+            },
+            recovery_timeline: {
+              type: 'string',
+              description: 'Expected price recovery (e.g. "6 months")',
+            },
+          },
+          description: 'Market context for framing the price. Omit for standard quotes.',
+        },
+        validity_days: {
+          type: 'number',
+          description: 'How many days the quote is valid (default 7)',
+        },
+        language: {
+          type: 'string',
+          enum: ['en', 'fi', 'de', 'sv'],
+          description: 'Override quote language. Usually omit this — language is auto-detected from customer_country.',
+        },
+        notes: {
+          type: 'string',
+          description: 'Additional notes or conditions to include',
+        },
+        sender_name: {
+          type: 'string',
+          description: 'Signature name. Default "Finn". Use team member name (e.g. "Johannes") when they send from own email.',
+        },
+        sender_title: {
+          type: 'string',
+          description: 'Signature title. Default "Export Manager, Droppe".',
+        },
+        sender_email: {
+          type: 'string',
+          description: 'Signature email. Default "finn@droppe.com". Use team member email when sending from own email.',
+        },
+      },
+    },
+  },
+
+  {
+    name: 'create_email_draft',
+    description:
+      'Create an email draft in a team member\'s Gmail. The draft appears in their Drafts folder, ready to review and send. ' +
+      'Use this after generate_quote when the team wants to send from their own email instead of via Finn. ' +
+      'Avoids copy-paste issues. Team member opens Gmail, reviews the draft, hits send.',
+    input_schema: {
+      type: 'object',
+      required: ['mailbox', 'to', 'subject', 'body'],
+      properties: {
+        mailbox: {
+          type: 'string',
+          enum: ['johannes@droppe.fi', 'oskar@droppe.fi', 'jonas@droppe.fi', 'finn@droppe.com', 'jonas.wagner@droppe-group.de'],
+          description: 'Which mailbox to create the draft in (team member\'s email)',
+        },
+        to: {
+          type: 'string',
+          description: 'Recipient email address',
+        },
+        subject: {
+          type: 'string',
+          description: 'Email subject',
+        },
+        body: {
+          type: 'string',
+          description: 'Email body (plain text)',
+        },
+        cc: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'CC recipients',
+        },
+      },
+    },
+  },
+
+  // ========================================
+  // DATA / SHEETS
+  // ========================================
+
   {
     name: 'scan_sheet',
     description:

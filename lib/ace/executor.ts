@@ -23,6 +23,7 @@ import {
   gmail_searchThreads,
   gmail_getThread,
   gmail_sendMessage,
+  gmail_createDraft,
   gmail_fetchAttachments,
   gmail_downloadAttachment,
 } from '@/lib/handlers/gmail';
@@ -41,6 +42,15 @@ import {
   formatProjectDashboard,
   type SupplierStatus,
 } from '@/lib/handlers/projects';
+import {
+  generateQuote,
+  resolveLanguage,
+  type QuoteRequest,
+  type QuoteLineItem,
+  type PaymentTerms,
+  type DeliveryTerms,
+  type MarketContext,
+} from '@/lib/handlers/quotes';
 
 export async function executeTool(
   toolName: string,
@@ -694,6 +704,66 @@ export async function executeTool(
           default:
             return { success: false, error: `Unknown project operation: ${op}` };
         }
+      }
+
+      // ========================================
+      // DRAFTS
+      // ========================================
+
+      case 'create_email_draft': {
+        const result = await gmail_createDraft({
+          mailbox: input.mailbox as string,
+          to: input.to as string,
+          subject: input.subject as string,
+          body: input.body as string,
+          cc: input.cc as string[] | undefined,
+        });
+
+        return result.success
+          ? { success: true, data: { draft_id: result.draft_id, mailbox: input.mailbox, message: `Draft created in ${input.mailbox} — open Gmail Drafts to review and send.` } }
+          : { success: false, error: result.error };
+      }
+
+      // ========================================
+      // QUOTES
+      // ========================================
+
+      case 'generate_quote': {
+        const quoteReq: QuoteRequest = {
+          customer_name: input.customer_name as string,
+          contact_name: input.contact_name as string | undefined,
+          contact_email: input.contact_email as string | undefined,
+          customer_country: input.customer_country as string | undefined,
+          customer_context: input.customer_context as string | undefined,
+          line_items: input.line_items as QuoteLineItem[],
+          payment: input.payment as PaymentTerms,
+          delivery: input.delivery as DeliveryTerms,
+          market_context: input.market_context as MarketContext | undefined,
+          validity_days: input.validity_days as number | undefined,
+          language: input.language as string | undefined,
+          notes: input.notes as string | undefined,
+          sender_name: input.sender_name as string | undefined,
+          sender_title: input.sender_title as string | undefined,
+          sender_email: input.sender_email as string | undefined,
+        };
+
+        const quote = generateQuote(quoteReq);
+
+        const resolvedLang = resolveLanguage(quoteReq.language, quoteReq.customer_country);
+
+        return {
+          success: true,
+          data: {
+            subject: quote.subject,
+            body: quote.body,
+            summary: quote.summary,
+            line_item_total: quote.line_item_total,
+            contact_email: quoteReq.contact_email,
+            language: resolvedLang,
+            language_source: quoteReq.language ? 'explicit' : quoteReq.customer_country ? `from country: ${quoteReq.customer_country}` : 'default (en)',
+            instructions: 'Post the full quote draft to the Slack thread. Ask the team: send via Finn (send_supplier_email) or copy-paste to send from your own email?',
+          },
+        };
       }
 
       case 'post_progress': {

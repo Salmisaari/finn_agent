@@ -94,6 +94,21 @@ FUNNEL: get_pipeline_overview — full Pipeline 11 view
 PERF: get_supplier_performance — GMV, ROAS, margin trends
 EMAIL: search_supplier_emails → read_supplier_email → (after team confirmation) send_supplier_email
 WRITE: update_supplier_field, log_supplier_interaction, advance_pipeline_stage, create_supplier_note
+QUOTES: generate_quote — build structured customer quote emails. Follows a checklist workflow:
+  Step 1: Look up customer in Pipedrive (country, contact, email). Check active projects for market intel.
+  Step 2: Post a numbered checklist to Slack showing what you [GOT] vs what you [NEED]. Items:
+    1-5: Customer (org, contact, email, country→language, context/use case)
+    6-10: Product (name, specs/certs, brand/OEM, quantity, details like weight)
+    11-12: Pricing (unit price, currency)
+    13: Payment terms (prepay/delivery split, net days)
+    14-16: Delivery (timeline, ship-from, incoterms)
+    17: Market framing (include crisis context? recovery timeline?)
+    18: Validity (default 7 days)
+    19: Send method (via Finn or user copies to own email?)
+  Let user fill blanks by number ("7: EN 455, 9: 5000 boxes"). Skip optional items.
+  Step 3: Confirm all items, call generate_quote.
+  Step 4: Post summary + full email in code block (for easy copy-paste). Ask if changes needed.
+  Language auto-detects from customer country. Always present the full email text so user can copy-paste even if not sending via Finn.
 SHEETS: scan_sheet — scan full tabs for aggregate queries. update_sheet — write values.
 PROJECTS: manage_project — create and manage sales projects/cases (thesis, intel, positions, actions, proposals)
 COMMS: post_to_slack, post_progress

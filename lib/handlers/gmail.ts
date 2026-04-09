@@ -16,6 +16,7 @@ const ALLOWED_MAILBOXES = [
   'oskar@droppe.fi',
   'jonas@droppe.fi',
   'jonas.wagner@droppe-group.de',
+  'johannes@droppe.fi',
 ] as const;
 
 type AllowedMailbox = typeof ALLOWED_MAILBOXES[number];
@@ -303,6 +304,89 @@ export async function gmail_sendMessage(opts: {
       requestBody,
     });
     return { success: true, message_id: res.data.id || undefined };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Unknown error',
+    };
+  }
+}
+
+// ========================================
+// CREATE DRAFT (for quote workflow — draft in sender's mailbox, don't send)
+// ========================================
+
+export interface CreateDraftResult {
+  success: boolean;
+  draft_id?: string;
+  message_id?: string;
+  error?: string;
+}
+
+/**
+ * Create an email draft in a team member's mailbox.
+ * The draft appears in their Gmail Drafts folder ready to review and send.
+ * mailbox must be in ALLOWED_MAILBOXES.
+ */
+export async function gmail_createDraft(opts: {
+  mailbox: string;          // Which mailbox to create the draft in (e.g. johannes@droppe.fi is not in allowlist — use finn@droppe.com or add)
+  from?: string;            // From address (defaults to mailbox)
+  to: string;
+  subject?: string;
+  body: string;
+  cc?: string[];
+  thread_id?: string;
+  in_reply_to?: string;
+  references?: string;
+}): Promise<CreateDraftResult> {
+  const mailbox = opts.mailbox;
+  const gmail = getGmailClient(mailbox);
+  const from = opts.from || mailbox;
+
+  const subject = opts.subject || '(no subject)';
+  const utf8Subject = `=?utf-8?B?${Buffer.from(subject).toString('base64')}?=`;
+  const headerLines = [
+    `From: ${from}`,
+    `To: ${opts.to}`,
+  ];
+
+  const cc = opts.cc || [];
+  if (cc.length > 0) headerLines.push(`Cc: ${cc.join(', ')}`);
+
+  headerLines.push(
+    `Subject: ${utf8Subject}`,
+    'Content-Type: text/plain; charset=utf-8',
+    'MIME-Version: 1.0',
+  );
+
+  if (opts.in_reply_to) headerLines.push(`In-Reply-To: ${opts.in_reply_to}`);
+  if (opts.references) headerLines.push(`References: ${opts.references}`);
+
+  const raw = Buffer.from(
+    `${headerLines.join('\r\n')}\r\n\r\n${opts.body}`
+  )
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+
+  const requestBody: { message: { raw: string; threadId?: string } } = {
+    message: { raw },
+  };
+  if (opts.thread_id) {
+    requestBody.message.threadId = opts.thread_id;
+  }
+
+  try {
+    const res = await gmail.users.drafts.create({
+      userId: 'me',
+      requestBody,
+    });
+    return {
+      success: true,
+      draft_id: res.data.id || undefined,
+      message_id: res.data.message?.id || undefined,
+    };
   } catch (err) {
     return {
       success: false,
